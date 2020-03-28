@@ -77,16 +77,23 @@ struct color_object_t {
   uint32_t color_count;
   uint32_t color_count_1;
   uint32_t color_count_2;
+  uint16_t greenp_Loc;
 
   bool updated;
 };
+
+// Additional variables
+
+uint8_t treshold_loc = 47; // <-// ADJUST THIS TO CHANGE THE ABOVE MENTIONED TRESHOLD!
+
+
 struct color_object_t global_filters[2];
 
 // Function
 uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc, bool draw,
                               uint8_t lum_min, uint8_t lum_max,
                               uint8_t cb_min, uint8_t cb_max,
-                              uint8_t cr_min, uint8_t cr_max,  uint8_t mark);
+                              uint8_t cr_min, uint8_t cr_max, uint8_t treshold_loc,  uint8_t mark);
 
 /*
  * object_detector
@@ -127,9 +134,11 @@ static struct image_t *object_detector(struct image_t *img, uint8_t filter)
   int32_t x_c, y_c;
 
   // Filter and find centroid
-  uint32_t count = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, 0);
-  uint32_t count_1 = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, 1);
-  uint32_t count_2 = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, 2);
+  uint32_t count = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 0);
+  uint32_t count_1 = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 1);
+  uint32_t count_2 = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 2);
+  uint16_t greenp_Loc = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 3);
+
   VERBOSE_PRINT("Color count %d: %u, threshold %u, x_c %d, y_c %d\n", camera, object_count, count_threshold, x_c, y_c);
   VERBOSE_PRINT("centroid %d: (%d, %d) r: %4.2f a: %4.2f\n", camera, x_c, y_c,
         hypotf(x_c, y_c) / hypotf(img->w * 0.5, img->h * 0.5), RadOfDeg(atan2f(y_c, x_c)));
@@ -138,6 +147,7 @@ static struct image_t *object_detector(struct image_t *img, uint8_t filter)
   global_filters[filter-1].color_count = count;
   global_filters[filter-1].color_count_1 = count_1;
   global_filters[filter-1].color_count_2 = count_2;
+  global_filters[filter-1].greenp_Loc = greenp_Loc;
   global_filters[filter-1].x_c = x_c;
   global_filters[filter-1].y_c = y_c;
   global_filters[filter-1].updated = true;
@@ -216,19 +226,116 @@ void color_object_detector_init(void)
 uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc, bool draw,
                               uint8_t lum_min, uint8_t lum_max,
                               uint8_t cb_min, uint8_t cb_max,
-                              uint8_t cr_min, uint8_t cr_max, uint8_t mark)
-{
-  uint32_t cnt = 0;
-  uint32_t tot_x = 0;
-  uint32_t tot_y = 0;
-  uint8_t *buffer = img->buf;
+                              uint8_t cr_min, uint8_t cr_max, uint8_t treshold_loc, uint8_t mark) {
+    uint32_t cnt = 0;
+    uint32_t tot_x = 0;
+    uint32_t tot_y = 0;
+    uint8_t *buffer = img->buf;
+
+    // new added variables @Robbin
+
+    uint8_t patch_green[48][104] = {0};   // <- will store the amount of green counts in each patch of the image
+    int16_t p;                      // for the loops
+    int16_t pp;                     // ,,
+    int16_t q;                      // ,,
+    int16_t qq;                     // ,,
+    uint8_t g_count;                // count of green pixels in current patch
+    uint8_t altHorLoc[104] = {0};         // the location of the first green top down along the width of the image
+    uint32_t danger_count = 0;          // count the amount of patches that occur below the treshold "mark"
+
+    // The loop is nested multiple times nevertheless it loops still 240*520 times (so once for each pixel
+
+    switch (mark) {
+        case 3:
+
+
+            for (p = 0; p < 48; p++) {
+                for (q = 0; q < 104; q++) {
+                    // Now we will have to find the number of green in each patch
+                    for (pp = p * 5; pp < (p * 5) + 5; pp++) {
+                        for (qq = q * 5; qq < (q * 5) + 5; qq++) {   // looping through each pixel within the patch
+                            // find yuv values
+                            // Check if the color is inside the specified values
+                            uint8_t *yp, *up, *vp;
+                            if (pp % 2 == 0) {
+                                // Even x
+                                up = &buffer[qq * 2 * img->w + 2 * pp];      // U
+                                yp = &buffer[qq * 2 * img->w + 2 * pp + 1];  // Y1
+                                vp = &buffer[qq * 2 * img->w + 2 * pp + 2];  // V
+                                //yp = &buffer[qq * 2 * img->w + 2 * pp + 3]; // Y2
+                            } else {
+                                // Uneven x
+                                up = &buffer[qq * 2 * img->w + 2 * pp - 2];  // U
+                                //yp = &buffer[y * 2 * img->w + 2 * x - 1]; // Y1
+                                vp = &buffer[qq * 2 * img->w + 2 * pp];      // V
+                                yp = &buffer[qq * 2 * img->w + 2 * pp + 1];  // Y2
+                            }
+                            if ((*yp >= lum_min) && (*yp <= lum_max) &&
+                                (*up >= cb_min) && (*up <= cb_max) &&
+                                (*vp >= cr_min) && (*vp <= cr_max)) {
+                                g_count++;
+                            }
+                        }
+                    }
+                    patch_green[p][q] = g_count;
+                    g_count = 0;
+                }
+            }
+
+            // Now we need to loop once more through the patches (240*520/25=4992 loops) to find where the green first appears looking from top to bottom
+
+            for (q = 103; q > 0; q--) {
+                for (p = 46; p > 0; p--) {
+                    // screening the patches from top to bottom find the first patch with sufficient green and return its location
+                    if (patch_green[p][q] > 16) {
+                        altHorLoc[q] = (p * 5) + 5;
+                        // check if the detected patch is to close to the bottom of the image and if yes add it to count
+                        if ((q > 30) && (q < 73) && (altHorLoc[q] < treshold_loc)) {
+                            danger_count++;
+                        }
+                        // draw the patch bright:
+                        if ((q > 3) && (p > 3)) {
+                            for (pp = -2; pp < 3; pp++) {
+                                for (qq = -2; qq < 3; qq++) {
+                                    uint8_t *yp, *up, *vp;
+                                    if (pp % 2 == 0) {
+                                        // Even x
+                                        up = &buffer[((q * 5) + qq) * 2 * img->w + 2 * (((p * 5) + 5) + pp)];      // U
+                                        yp = &buffer[((q * 5) + qq) * 2 * img->w + 2 * (((p * 5) + 5) + pp) + 1];  // Y1
+                                        vp = &buffer[((q * 5) + qq) * 2 * img->w + 2 * (((p * 5) + 5) + pp) + 2];  // V
+                                        //yp = &buffer[qq * 2 * img->w + 2 * pp + 3]; // Y2
+                                    } else {
+                                        // Uneven x
+                                        up = &buffer[((q * 5) + qq) * 2 * img->w + 2 * (((p * 5) + 5) + pp) - 2];  // U
+                                        //yp = &buffer[y * 2 * img->w + 2 * x - 1]; // Y1
+                                        vp = &buffer[((q * 5) + qq) * 2 * img->w + 2 * (((p * 5) + 5) + pp)];      // V
+                                        yp = &buffer[((q * 5) + qq) * 2 * img->w + 2 * (((p * 5) + 5) + pp) + 1];  // Y2
+                                    }
+                                    if (draw) {
+                                        *yp = 255;  // make pixel brighter in image
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+
+                }
+                // if no patch was found than its also considered dangerous to fly
+                if ((q > 23) && (q < 85) && (altHorLoc[q] < treshold_loc)) {
+                    danger_count++;
+                }
+            }
+            return danger_count;
+    }
+
 
   switch (mark){ 
     case 0:
     //Scan for lower half and left 1/3 of the img
       lum_min = cod_lum_min1;
       for (uint16_t y = 0; y < img->h/4; y++) {
-        for (uint16_t x = 0; x < img->w/2; x ++) {
+        for (uint16_t x = floor(img->w/5); x < img->w/2; x ++) {
           // Check if the color is inside the specified values
           uint8_t *yp, *up, *vp;
           if (x % 2 == 0) {
@@ -251,7 +358,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
            tot_x += x;
            tot_y += y;
            if (draw){
-              *yp = 255;  // make pixel brighter in image
+              *yp = 0;  // make pixel brighter in image
             }
           }
         }
@@ -272,7 +379,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
     //Scan for lower half and centeral 1/3 of the img
       lum_min = cod_lum_min1;
       for (uint16_t y = img->h/4; y < (img->h/4)*3; y++) {
-        for (uint16_t x = 0; x < img->w/2; x ++) {
+        for (uint16_t x = floor(img->w/5); x < img->w/2; x ++) {
           // Check if the color is inside the specified values
           uint8_t *yp, *up, *vp;
           if (x % 2 == 0) {
@@ -295,7 +402,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
            tot_x += x;
            tot_y += y;
            if (draw){
-              *yp = 255;  // make pixel brighter in image
+              *yp = 0;  // make pixel brighter in image
             }
           }
         }
@@ -314,7 +421,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
     //Scan for lower half and right 1/3 of the img
       lum_min = cod_lum_min1;
       for (uint16_t y = (img->h/4)*3; y < img->h; y++) {
-        for (uint16_t x = 0; x < img->w/2; x ++) {
+        for (uint16_t x = floor(img->w/5); x < img->w/2; x ++) {
           // Check if the color is inside the specified values
           uint8_t *yp, *up, *vp;
           if (x % 2 == 0) {
@@ -337,7 +444,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
            tot_x += x;
            tot_y += y;
            if (draw){
-              *yp = 255;  // make pixel brighter in image
+              *yp = 0;  // make pixel brighter in image
             }
           }
         }
@@ -354,7 +461,11 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
       default:
 	return cnt;
   };
+
 }
+
+
+
 
 void color_object_detector_periodic(void)
 {
@@ -365,12 +476,12 @@ void color_object_detector_periodic(void)
 
   if(local_filters[0].updated){
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, local_filters[0].x_c, local_filters[0].y_c,
-        0, 0, local_filters[0].color_count, local_filters[0].color_count_1, local_filters[0].color_count_2, 0);
+        0, 0, local_filters[0].color_count, local_filters[0].color_count_1, local_filters[0].color_count_2, local_filters[0].greenp_Loc);
     local_filters[0].updated = false;
   }
   if(local_filters[1].updated){
     AbiSendMsgVISUAL_DETECTION(COLOR_OBJECT_DETECTION1_ID, local_filters[0].x_c, local_filters[0].y_c,
-        0, 0, local_filters[0].color_count, local_filters[0].color_count_1, local_filters[0].color_count_2, 0);
+        0, 0, local_filters[0].color_count, local_filters[0].color_count_1, local_filters[0].color_count_2, local_filters[0].greenp_Loc);
     local_filters[1].updated = false;
   }
 }
