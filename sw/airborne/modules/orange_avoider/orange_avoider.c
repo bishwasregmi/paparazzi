@@ -24,6 +24,7 @@
 #include "subsystems/abi.h"
 #include <time.h>
 #include <stdio.h>
+#include <math.h>
 
 #define NAV_C // needed to get the nav funcitons like Inside...
 #include "generated/flight_plan.h"
@@ -50,16 +51,17 @@ enum navigation_state_t {
 };
 
 // define settings
-float oa_color_count_frac = 0.85f;
+float oa_color_count_frac = 0.4f;
 
 // define and initialise global variables
 enum navigation_state_t navigation_state = SEARCH_FOR_SAFE_HEADING;
 int32_t color_count = 0;               // orange color count from color filter for obstacle detection
 int32_t color_count_1 = 0;
 int32_t color_count_2 = 0;
+int32_t green_lbtresh_count = 0;
 int16_t obstacle_free_confidence = 0;   // a measure of how certain we are that the way ahead is safe.
 float heading_increment = 5.f;          // heading angle increment [deg]
-float maxDistance = 2.25;               // max waypoint displacement [m]
+float maxDistance = 3.5;               // max waypoint displacement [m]
 
 const int16_t max_trajectory_confidence = 5; // number of consecutive negative object detections to be sure we are obstacle free
 
@@ -70,11 +72,12 @@ static abi_event color_detection_ev;
 static void color_detection_cb(uint8_t __attribute__((unused)) sender_id,
                                int16_t __attribute__((unused)) pixel_x, int16_t __attribute__((unused)) pixel_y,
                                int16_t __attribute__((unused)) pixel_width, int16_t __attribute__((unused)) pixel_height,
-                               int32_t quality, int32_t quality_1, int32_t quality_2,  int16_t __attribute__((unused)) extra)
+                               int32_t quality, int32_t quality_1, int32_t quality_2,  int16_t extra)
 {
   color_count = quality;
   color_count_1 = quality_1;
   color_count_2 = quality_2;
+  green_lbtresh_count = extra;
 }
 
 /*
@@ -104,15 +107,16 @@ void orange_avoider_periodic(void)
   printf("%d\n", color_count);
   printf("%d\n", color_count_1);
   printf("%d\n", color_count_2);
+  printf("%d\n", green_lbtresh_count);
 
   // compute current color thresholds
-  int32_t color_count_threshold = oa_color_count_frac * front_camera.output_size.w/2 * front_camera.output_size.h/3;
+  int32_t color_count_threshold = oa_color_count_frac * floor(front_camera.output_size.w*0.3) * front_camera.output_size.h/3;
 
   VERBOSE_PRINT("Color_count: %d  threshold: %d state: %d \n", color_count, color_count, navigation_state);
 
   // update our safe confidence using color threshold
-  if(color_count_1 > color_count_threshold){
-    obstacle_free_confidence++;
+  if((color_count_1 > color_count_threshold) && (green_lbtresh_count < 10)) {
+      obstacle_free_confidence++;
   } else {
     obstacle_free_confidence -= 2;  // be more cautious with positive obstacle detections
   }
@@ -120,7 +124,7 @@ void orange_avoider_periodic(void)
   // bound obstacle_free_confidence
   Bound(obstacle_free_confidence, 0, max_trajectory_confidence);
 
-  float moveDistance = fminf(maxDistance, 0.2f * obstacle_free_confidence);
+  float moveDistance = fminf(maxDistance, 0.22f * obstacle_free_confidence);
 
   switch (navigation_state){
     case SAFE:
@@ -237,10 +241,10 @@ uint8_t chooseRandomIncrementAvoidance(void)
 {
   // Choose left or right turn based on vision to the left and right
   if (color_count < color_count_2) {
-    heading_increment = 10.f;
+    heading_increment = 6.f;
     VERBOSE_PRINT("Set avoidance increment to: %f\n", heading_increment);
   } else {
-    heading_increment = -10.f;
+    heading_increment = -6.f;
     VERBOSE_PRINT("Set avoidance increment to: %f\n", heading_increment);
   }
   return false;
