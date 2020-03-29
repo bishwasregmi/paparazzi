@@ -54,3 +54,12 @@ extern void color_object_detector_init(void);
 extern void color_object_detector_periodic(void);
 
 #endif /* COLOR_OBJECT_DETECTOR_CV_H */
+
+// ------------------------- OPENCVSTUFF ----------------------------------------
+
+#ifndef CV_OPENCVDEMO_H
+#define CV_OPENCVDEMO_H
+
+extern void opencvdemo_init(void);
+
+#endif
