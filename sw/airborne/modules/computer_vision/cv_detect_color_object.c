@@ -345,7 +345,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
             for (q = 103; q > 0; q--) {
                 for (p = 46; p > 0; p--) {
                     // screening the patches from top to bottom find the first patch with sufficient green and return its location
-                    if (patch_green[p][q] > 10) {
+                    if (patch_green[p][q] > 15) {
                         altHorLoc[q] = (p * 5) + 5;
                         // check if the detected patch is to close to the bottom of the image and if yes add it to count
                         if ((q > 30) && (q < 73) && (altHorLoc[q] < treshold_loc)) {
