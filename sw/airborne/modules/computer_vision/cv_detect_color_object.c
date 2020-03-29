@@ -36,6 +36,17 @@
 #include <math.h>
 #include "pthread.h"
 
+
+#include "modules/computer_vision/cv.h"
+#include "modules/computer_vision/cv_opencvdemo.h"
+#include "modules/computer_vision/opencv_example.h"
+
+#ifndef OPENCVDEMO_FPS
+#define OPENCVDEMO_FPS 0       ///< Default FPS (zero means run at camera fps)
+#endif
+PRINT_CONFIG_VAR(OPENCVDEMO_FPS)
+
+
 #define PRINT(string,...) fprintf(stderr, "[object_detector->%s()] " string,__FUNCTION__ , ##__VA_ARGS__)
 #if OBJECT_DETECTOR_VERBOSE
 #define VERBOSE_PRINT PRINT
@@ -51,6 +62,8 @@ static pthread_mutex_t mutex;
 #ifndef COLOR_OBJECT_DETECTOR_FPS2
 #define COLOR_OBJECT_DETECTOR_FPS2 0 ///< Default FPS (zero means run at camera fps)
 #endif
+
+
 
 // Filter Settings
 uint8_t cod_lum_min1 = 0;
@@ -84,7 +97,7 @@ struct color_object_t {
 
 // Additional variables
 
-uint8_t treshold_loc = 47; // <-// ADJUST THIS TO CHANGE THE ABOVE MENTIONED TRESHOLD!
+uint8_t treshold_loc = 60; // <-// ADJUST THIS TO CHANGE THE THRESHOLD WERE GREEN PATCHES ARE TOO LOW...
 
 
 struct color_object_t global_filters[2];
@@ -95,12 +108,49 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
                               uint8_t cb_min, uint8_t cb_max,
                               uint8_t cr_min, uint8_t cr_max, uint8_t treshold_loc,  uint8_t mark);
 
+// ---------------------------- OPENCVSTUFF -----------------------------------------------
+
+
+
+/*
+// Function
+struct image_t *opencv_func(struct image_t *img);
+struct image_t *opencv_func(struct image_t *img)
+{
+
+    if (img->type == IMAGE_YUV422) {
+        // Call OpenCV (C++ from paparazzi C function)
+        opencv_example((char *) img->buf, img->w, img->h);
+    }
+
+// opencv_example(NULL, 10,10);
+
+    return NULL;
+}
+*/
+
+
+
+
+
+
+
+
+// ---------------------------- END OPENCVSTUFF -----------------------------------------------
+
+
+
+
 /*
  * object_detector
  * @param img - input image to process
  * @param filter - which detection filter to process
  * @return img
  */
+
+
+
+
 static struct image_t *object_detector(struct image_t *img, uint8_t filter)
 {
   uint8_t lum_min, lum_max;
@@ -133,11 +183,19 @@ static struct image_t *object_detector(struct image_t *img, uint8_t filter)
 
   int32_t x_c, y_c;
 
+  // opencv stuff
+
+    if (img->type == IMAGE_YUV422) {
+        // Call OpenCV (C++ from paparazzi C function)
+        opencv_example((char *) img->buf, img->w, img->h);
+    }
+
+
   // Filter and find centroid
+  uint16_t greenp_Loc = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 3);
   uint32_t count = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 0);
   uint32_t count_1 = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 1);
   uint32_t count_2 = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 2);
-  uint16_t greenp_Loc = find_object_centroid(img, &x_c, &y_c, draw, lum_min, lum_max, cb_min, cb_max, cr_min, cr_max, treshold_loc, 3);
 
   VERBOSE_PRINT("Color count %d: %u, threshold %u, x_c %d, y_c %d\n", camera, object_count, count_threshold, x_c, y_c);
   VERBOSE_PRINT("centroid %d: (%d, %d) r: %4.2f a: %4.2f\n", camera, x_c, y_c,
@@ -287,7 +345,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
             for (q = 103; q > 0; q--) {
                 for (p = 46; p > 0; p--) {
                     // screening the patches from top to bottom find the first patch with sufficient green and return its location
-                    if (patch_green[p][q] > 16) {
+                    if (patch_green[p][q] > 10) {
                         altHorLoc[q] = (p * 5) + 5;
                         // check if the detected patch is to close to the bottom of the image and if yes add it to count
                         if ((q > 30) && (q < 73) && (altHorLoc[q] < treshold_loc)) {
@@ -358,7 +416,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
            tot_x += x;
            tot_y += y;
            if (draw){
-              *yp = 0;  // make pixel brighter in image
+              *yp = 30;  // make pixel brighter in image
             }
           }
         }
@@ -402,7 +460,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
            tot_x += x;
            tot_y += y;
            if (draw){
-              *yp = 0;  // make pixel brighter in image
+              *yp =  30;  // make pixel brighter in image
             }
           }
         }
@@ -444,7 +502,7 @@ uint32_t find_object_centroid(struct image_t *img, int32_t* p_xc, int32_t* p_yc,
            tot_x += x;
            tot_y += y;
            if (draw){
-              *yp = 0;  // make pixel brighter in image
+              *yp =  30;  // make pixel brighter in image
             }
           }
         }
